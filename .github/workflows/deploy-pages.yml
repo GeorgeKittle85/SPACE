@@ -1,0 +1,54 @@
+# Deploys the static game in this repo to GitHub Pages.
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The deploy job needs these to publish to Pages via OIDC.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish; queue the next one instead of cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Sanity-check index.html
+        run: |
+          test -s index.html || { echo "::error::index.html is missing or empty"; exit 1; }
+          head -c 200 index.html | grep -qi '<!doctype html>' || { echo "::error::index.html must start with <!doctype html>"; exit 1; }
+          if grep -q '__FRAME_PREAMBLE' index.html; then
+            echo "::error::index.html still contains the claude.ai frame runtime; export the page source instead of the wrapped download"; exit 1
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          # Publishes the repo root (.git and .github are always excluded).
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
